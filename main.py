@@ -434,56 +434,153 @@ def create_success_probability_gauge(probability):
     return fig
 
 def create_feature_comparison_chart(analysis_df):
-    """Enhanced grouped bar chart comparing metrics vs benchmarks"""
-    # Convert Impact to numeric for sorting
-    impact_scores = {'High': 3, 'Medium': 2, 'Low': 1}
+    """Create histogram comparison of different attributes"""
+    # Define weights and scores
+    impact_weights = {'High': 3, 'Medium': 2, 'Low': 1}
+    status_weights = {'Critical': 1, 'Needs Improvement': 2, 'Good': 3, 'Excellent': 4}
+    
+    # Prepare the data
     df = analysis_df.copy()
-    df['Impact_Score'] = df['Impact'].map(impact_scores)
+    df['Impact_Score'] = df['Impact'].map(impact_weights)
+    df['Status_Score'] = df['Status'].map(status_weights)
+    df['Priority_Score'] = df['Impact_Score'] * (5 - df['Status_Score'])
     
-    # Select top features by impact score
-    top_features = df.nlargest(10, 'Impact_Score')
+    # Select top features by priority score
+    top_features = df.nlargest(10, 'Priority_Score')
     
-    fig = go.Figure()
-    
-    # Add bars for user values
-    fig.add_trace(go.Bar(
-        name='Your Values',
-        x=top_features['Feature'],
-        y=top_features['Your Value'],
-        marker_color='lightblue',
-        text=[f"{val:.1f}" if isinstance(val, (int, float)) else str(val) for val in top_features['Your Value']],
-        textposition='auto',
-        hovertemplate='<b>%{x}</b><br>Your Value: %{y}<br>Status: %{customdata}<extra></extra>',
-        customdata=top_features['Status']
-    ))
-    
-    # Add bars for benchmarks
-    fig.add_trace(go.Bar(
-        name='Success Benchmarks',
-        x=top_features['Feature'],
-        y=top_features['Success Benchmark'],
-        marker_color='green',
-        text=[f"{val:.1f}" if isinstance(val, float) else str(val) for val in top_features['Success Benchmark']],
-        textposition='auto',
-        hovertemplate='<b>%{x}</b><br>Benchmark: %{y}<extra></extra>'
-    ))
-    
-    fig.update_layout(
-        title='<b>Your Metrics vs Success Benchmarks</b>',
-        xaxis_title='<b>Features</b>',
-        yaxis_title='<b>Values</b>',
-        barmode='group',
-        height=500,
-        xaxis={'tickangle': 45, 'tickfont': {'size': 10}},
-        template='plotly_white',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1
-        )
+    # Create figure with histogram subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            'Value Distribution',
+            'Impact Distribution',
+            'Status Distribution',
+            'Priority Distribution'
+        ),
+        vertical_spacing=0.2,
+        horizontal_spacing=0.1
     )
+    
+    # Color scheme
+    colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728', '#9467bd']
+    
+    # 1. Your Values Distribution
+    fig.add_trace(go.Histogram(
+        x=top_features['Your Value'],
+        name='Your Values',
+        marker_color=colors[0],
+        opacity=0.8,
+        nbinsx=8,
+        hovertemplate='Value: %{x:.1f}<br>Count: %{y}<extra></extra>',
+        showlegend=False
+    ), row=1, col=1)
+    
+    # Add benchmark line
+    avg_benchmark = top_features['Success Benchmark'].mean()
+    fig.add_vline(
+        x=avg_benchmark,
+        line=dict(color=colors[1], width=2, dash='dash'),
+        row=1, col=1,
+        annotation_text=f"Avg Benchmark: {avg_benchmark:.1f}",
+        annotation_position='top right'
+    )
+    
+    # 2. Impact Distribution
+    impact_counts = top_features['Impact'].value_counts().reindex(['Low', 'Medium', 'High']).fillna(0)
+    fig.add_trace(go.Bar(
+        x=impact_counts.index,
+        y=impact_counts.values,
+        name='Impact',
+        marker_color=[colors[impact_weights[imp]-1] for imp in impact_counts.index],
+        opacity=0.8,
+        hovertemplate='Impact: %{x}<br>Count: %{y}<extra></extra>',
+        showlegend=False
+    ), row=1, col=2)
+    
+    # 3. Status Distribution
+    status_counts = top_features['Status'].value_counts().reindex(['Critical', 'Needs Improvement', 'Good', 'Excellent']).fillna(0)
+    fig.add_trace(go.Bar(
+        x=status_counts.index,
+        y=status_counts.values,
+        name='Status',
+        marker_color=[colors[i % len(colors)] for i in range(len(status_counts))],
+        opacity=0.8,
+        hovertemplate='Status: %{x}<br>Count: %{y}<extra></extra>',
+        showlegend=False
+    ), row=2, col=1)
+    
+    # 4. Priority Score Distribution
+    fig.add_trace(go.Histogram(
+        x=top_features['Priority_Score'],
+        name='Priority',
+        marker_color=colors[4],
+        opacity=0.8,
+        nbinsx=8,
+        hovertemplate='Priority: %{x:.1f}<br>Count: %{y}<extra></extra>',
+        showlegend=False
+    ), row=2, col=2)
+    
+    # Add mean priority line
+    mean_priority = top_features['Priority_Score'].mean()
+    fig.add_vline(
+        x=mean_priority,
+        line=dict(color='#333', width=2, dash='dash'),
+        row=2, col=2,
+        annotation_text=f"Mean: {mean_priority:.1f}",
+        annotation_position='top right'
+    )
+    
+    # Add benchmark distribution as overlay in the first plot
+    fig.add_trace(go.Histogram(
+        x=top_features['Success Benchmark'],
+        name='Benchmark',
+        marker_color=colors[1],
+        opacity=0.5,
+        nbinsx=8,
+        hovertemplate='Benchmark: %{x:.1f}<br>Count: %{y}<extra></extra>',
+        showlegend=True
+    ), row=1, col=1)
+    
+    # Update layout
+    fig.update_layout(
+        title='<b>Attribute Distribution Analysis</b>',
+        height=700,
+        showlegend=True,
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=1.02,
+            xanchor='right',
+            x=1
+        ),
+        template='plotly_white',
+        margin=dict(l=50, r=50, b=80, t=80, pad=4),
+        hoverlabel=dict(
+            bgcolor='white',
+            font_size=12,
+            font_family='Arial'
+        ),
+        barmode='overlay'
+    )
+    
+    # Update subplot titles and axes
+    fig.update_xaxes(title_text='Your Value', row=1, col=1)
+    fig.update_yaxes(title_text='Count', row=1, col=1)
+    
+    fig.update_xaxes(title_text='Impact Level', row=1, col=2)
+    fig.update_yaxes(title_text='Count', row=1, col=2)
+    
+    fig.update_xaxes(title_text='Status', row=2, col=1)
+    fig.update_yaxes(title_text='Count', row=2, col=1)
+    
+    fig.update_xaxes(title_text='Priority Score', row=2, col=2)
+    fig.update_yaxes(title_text='Count', row=2, col=2)
+    
+    # Rotate x-axis labels for better readability
+    fig.update_xaxes(tickangle=-45)
+    
+    # Add gap between subplots and title
+    fig.update_layout(margin=dict(t=100))
     
     return fig
 
